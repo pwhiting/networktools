@@ -1,0 +1,51 @@
+
+mkdir -p /etc/hotplug.d/button
+chmod 777 /mnt
+cat > /mnt/parameters.txt << 'EOF'
+This file can contain settings for bandwidth, loss, and delay.
+It ignores everything that doesn't look like the lines below.
+Remove the pound sign to have them work...
+#delay=100 (this is in ms)
+#loss=1 (this is a percentage)
+#bw=100 (this is in Mb/s)
+EOF
+chmod 666 /mnt/parameters.txt
+
+
+cat > /etc/hotplug.d/button/buttons << 'EOF'
+bw=20     # Mbit/s
+loss=2    # percent 
+delay=300 # ms
+
+
+file=/mnt/parameters.txt
+
+while read var; do
+ eval $(echo $var | grep -oE "^\s*(delay|loss|bw)\s*=\s*[0-9]*")
+done < "$file"
+
+emulate() {
+  delay=$(expr $delay / 2)
+  loss=$(expr $loss / 2)
+  burst=$(expr $bw \* 4000) # burst = bandwidth/HZ(250)
+  for dev in $@ eth0.2 br-lan ; do
+    tc qdisc del dev $dev root
+    tc qdisc add dev $dev root handle 1: netem delay ${delay}ms loss ${loss}%
+    tc qdisc add dev $dev parent 1: tbf rate ${bw}Mbit burst ${burst} latency 5ms
+  done
+}
+
+if [ ${BUTTON} == "BTN_0" ] ; then
+ logger "the button was ${BUTTON} and the action was ${ACTION}"
+ if [ ${ACTION} == "pressed" ] ; then
+  emulate
+ else
+  for dev in eth0.2 br-lan ; do
+    tc qdisc del dev $dev root   
+  done
+ fi
+fi
+
+EOF
+
+
